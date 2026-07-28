@@ -1,0 +1,457 @@
+/* System Theme & CSS Variables */
+:root {
+    --primary-color: #0d6efd;
+    --primary-hover: #0b5ed7;
+    --dark-bg: #0f172a;
+    --sidebar-bg: #1e293b;
+    --sidebar-active: #334155;
+    --card-bg: #ffffff;
+    --border-color: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --accent-munck: #d97706;
+    --accent-truck: #2563eb;
+    --accent-carreta: #059669;
+    --accent-warning: #f59e0b;
+    --accent-danger: #ef4444;
+    --accent-success: #10b981;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+    color: var(--text-primary);
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', 'Inter', sans-serif;
+    font-weight: 700;
+}
+
+.app-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* Sidebar Styles */
+.sidebar-nav {
+    width: 260px;
+    background-color: var(--sidebar-bg);
+    color: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.sidebar-brand {
+    padding: 24px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.brand-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+.brand-text h2 {
+    font-size: 1.25rem;
+    margin: 0;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+}
+
+.brand-text h2 span {
+    color: #38bdf8;
+}
+
+.brand-text small {
+    display: block;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sidebar-user {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0,0,0,0.15);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.user-avatar {
+    width: 36px;
+    height: 36px;
+    background: #334155;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #38bdf8;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.user-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.user-role {
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+.nav-menu {
+    padding: 16px 12px;
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.menu-category {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 16px 12px 6px 12px;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    color: #cbd5e1;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+    background-color: rgba(255,255,255,0.06);
+    color: #ffffff;
+}
+
+.nav-link.active {
+    background-color: var(--primary-color);
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.35);
+}
+
+.nav-link-highlight {
+    background: linear-gradient(135deg, #059669, #10b981);
+    color: #ffffff !important;
+}
+
+.nav-link-highlight:hover {
+    background: linear-gradient(135deg, #047857, #059669);
+}
+
+.sidebar-footer {
+    padding: 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.btn-logout {
+    display: block;
+    text-align: center;
+    padding: 10px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.btn-logout:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+/* Top Header */
+.top-header {
+    height: 70px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28px;
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 260px;
+    z-index: 990;
+}
+
+.btn-toggle-sidebar {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+}
+
+.main-content {
+    margin-left: 260px;
+    margin-top: 70px;
+    padding: 28px;
+    flex-grow: 1;
+    width: calc(100% - 260px);
+}
+
+/* Cards & Metrics */
+.card-kpi {
+    border: none;
+    border-radius: var(--radius-md);
+    background: #ffffff;
+    box-shadow: var(--shadow-sm);
+    padding: 22px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.kpi-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+}
+
+.kpi-title {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.kpi-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 4px 0;
+    letter-spacing: -0.5px;
+}
+
+/* Badges for Vehicle Types */
+.badge-munck { background-color: #fef3c7; color: #92400e; }
+.badge-truck { background-color: #dbeafe; color: #1e40af; }
+.badge-carreta { background-color: #d1fae5; color: #065f46; }
+
+/* Visual Cargo Simulation Canvas & SVG Containers */
+.cargo-simulation-container {
+    background: #0f172a;
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    color: #ffffff;
+    box-shadow: var(--shadow-lg);
+}
+
+.truck-bed-visual {
+    position: relative;
+    border: 3px solid #475569;
+    border-radius: var(--radius-md);
+    background: #1e293b;
+    min-height: 280px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.truck-bed-header {
+    background: #334155;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.truck-cabin {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 40px;
+    background: #3b82f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    writing-mode: vertical-rl;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #ffffff;
+}
+
+.truck-load-area {
+    margin-left: 45px;
+    height: 230px;
+    position: relative;
+    background: repeating-linear-gradient(
+        45deg,
+        #1e293b,
+        #1e293b 10px,
+        #0f172a 10px,
+        #0f172a 20px
+    );
+}
+
+/* Material Block Styles in Simulation */
+.cargo-block {
+    position: absolute;
+    border: 2px solid rgba(255,255,255,0.7);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.cargo-block:hover {
+    transform: scale(1.04);
+    z-index: 10;
+}
+
+.cargo-block-bobina {
+    border-radius: 50% !important;
+    background: radial-gradient(circle, #f59e0b 0%, #b45309 100%);
+    box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4);
+}
+
+.cargo-block-transformador {
+    background: linear-gradient(135deg, #ef4444, #991b1b);
+}
+
+.cargo-block-poste {
+    background: linear-gradient(135deg, #64748b, #334155);
+}
+
+.cargo-block-caixa {
+    background: linear-gradient(135deg, #10b981, #047857);
+}
+
+.cargo-block-outro {
+    background: linear-gradient(135deg, #8b5cf6, #5b21b6);
+}
+
+/* Pyramid Bobina Visual Legend */
+.pyramid-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    background: rgba(255,255,255,0.05);
+    border-radius: var(--radius-md);
+}
+
+.pyramid-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.pyramid-circle {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #f59e0b 0%, #d97706 100%);
+    border: 2px solid #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+/* Responsive Behavior */
+@media (max-width: 991px) {
+    .sidebar-nav {
+        transform: translateX(-100%);
+    }
+    .sidebar-nav.active {
+        transform: translateX(0);
+    }
+    .top-header {
+        left: 0;
+    }
+    .btn-toggle-sidebar {
+        display: block;
+    }
+    .main-content {
+        margin-left: 0;
+        width: 100%;
+    }
+}
+
+/* Print View Styles for Relatório PDF */
+@media print {
+    .sidebar-nav, .top-header, .btn-action-no-print {
+        display: none !important;
+    }
+    .main-content {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+    .cargo-simulation-container {
+        background: #ffffff !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+        border: 1px solid #ccc;
+    }
+    .truck-bed-visual {
+        background: #f1f5f9 !important;
+        border-color: #000 !important;
+    }
+}
