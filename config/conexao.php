@@ -1,43 +1,95 @@
 <?php
-// Configurações de Conexão com o Banco de Dados MySQL
+// Configurações de Conexão com o Banco de Dados (Suporte Automático a SQLite Local e MySQL)
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Configuração do Driver: 'sqlite' (banco local sem depender de servidor MySQL) ou 'mysql'
+$db_driver = 'sqlite';
+
+// Configurações do MySQL (caso $db_driver seja alterado para 'mysql')
 $db_host = '127.0.0.1';
 $db_user = 'root';
 $db_pass = '';
 $db_name = 'cubagem_db';
 $db_port = '3306';
 
-try {
-    // Tenta conexão direta com a base de dados
-    $pdo = new PDO("mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4", $db_user, $db_pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES => false
-    ]);
-} catch (PDOException $e) {
-    // Se a base não existe, tenta criar e importar a estrutura automaticamente
+// Caminho do Arquivo de Banco de Dados SQLite Local
+$sqlite_file = __DIR__ . '/../sql/cubagem.sqlite';
+
+$pdo = null;
+
+if ($db_driver === 'sqlite') {
     try {
-        $pdo_root = new PDO("mysql:host={$db_host};port={$db_port};charset=utf8mb4", $db_user, $db_pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+        $sqlite_dir = dirname($sqlite_file);
+        if (!is_dir($sqlite_dir)) {
+            mkdir($sqlite_dir, 0777, true);
+        }
+
+        $needs_init = !file_exists($sqlite_file) || filesize($sqlite_file) === 0;
+        
+        $pdo = new PDO("sqlite:" . $sqlite_file, null, null, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ]);
         
-        $sql_file = __DIR__ . '/../sql/database.sql';
-        if (file_exists($sql_file)) {
-            $sql_content = file_get_contents($sql_file);
-            $pdo_root->exec($sql_content);
+        // Ativa suporte a chaves estrangeiras no SQLite
+        $pdo->exec("PRAGMA foreign_keys = ON;");
+
+        // Cria tabelas e insere dados padrão automaticamente na primeira execução
+        if ($needs_init) {
+            $sql_file = __DIR__ . '/../sql/database_sqlite.sql';
+            if (file_exists($sql_file)) {
+                $pdo->exec(file_get_contents($sql_file));
+            }
         }
-        
-        // Reconecta na base recém criada
+    } catch (PDOException $e) {
+        die("Erro ao inicializar o banco de dados SQLite local: " . $e->getMessage());
+    }
+} else {
+    // Tenta conexão com MySQL
+    try {
         $pdo = new PDO("mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4", $db_user, $db_pass, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false
         ]);
-    } catch (PDOException $e2) {
-        die("Erro grave de conexão com o banco de dados MySQL: " . $e2->getMessage());
+    } catch (PDOException $e) {
+        try {
+            $pdo_root = new PDO("mysql:host={$db_host};port={$db_port};charset=utf8mb4", $db_user, $db_pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+            ]);
+            
+            $sql_file = __DIR__ . '/../sql/database.sql';
+            if (file_exists($sql_file)) {
+                $pdo_root->exec(file_get_contents($sql_file));
+            }
+            
+            $pdo = new PDO("mysql:host={$db_host};port={$db_port};dbname={$db_name};charset=utf8mb4", $db_user, $db_pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false
+            ]);
+        } catch (PDOException $e2) {
+            // Fallback para SQLite local se o MySQL falhar
+            try {
+                $sqlite_dir = dirname($sqlite_file);
+                if (!is_dir($sqlite_dir)) {
+                    mkdir($sqlite_dir, 0777, true);
+                }
+                $needs_init = !file_exists($sqlite_file) || filesize($sqlite_file) === 0;
+                $pdo = new PDO("sqlite:" . $sqlite_file, null, null, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+                ]);
+                $pdo->exec("PRAGMA foreign_keys = ON;");
+                if ($needs_init && file_exists(__DIR__ . '/../sql/database_sqlite.sql')) {
+                    $pdo->exec(file_get_contents(__DIR__ . '/../sql/database_sqlite.sql'));
+                }
+            } catch (PDOException $e3) {
+                die("Erro de conexão com o banco de dados: " . $e2->getMessage());
+            }
+        }
     }
 }
 

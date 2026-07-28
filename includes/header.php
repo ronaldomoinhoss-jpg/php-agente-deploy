@@ -27,6 +27,10 @@ $usuarioLogado = get_logged_user();
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+    <!-- Three.js & OrbitControls para Visualização e Rotação 3D do Veículo -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
     <!-- Custom System Styles -->
     <link rel="stylesheet" href="../assets/css/style.css">
 </head>
