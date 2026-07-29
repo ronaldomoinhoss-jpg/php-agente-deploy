@@ -167,7 +167,14 @@ const manualPlanner = {
     dragPayload: null,
     slotDefs: [],
     boardMode: '2d',
-    renderers: {}
+    renderers: {},
+    previews: {},
+    snapConfig: {
+        gridStep: 0.05,
+        gridTolerance: 0.04,
+        edgeTolerance: 0.12,
+        neighborTolerance: 0.14
+    }
 };
 
 function getCurrentMode() {
@@ -332,6 +339,7 @@ function resetManualPlanner() {
     manualPlanner.placed = [];
     manualPlanner.selectedIds = new Set();
     manualPlanner.slotDefs = [];
+    manualPlanner.previews = {};
     renderManualPlanner();
 }
 
@@ -393,6 +401,7 @@ function renderManualBoards() {
 
     container.innerHTML = manualPlanner.slotDefs.map(slot => {
         const placed = manualPlanner.placed.filter(token => token.vehicle_slot_key === slot.slot_key);
+        const preview = manualPlanner.previews[slot.slot_key] || null;
         const scale = Math.min(500 / slot.comprimento_m, 220 / slot.largura_m);
         const blocks = placed.map(token => {
             const left = token.posicao_x * scale;
@@ -409,6 +418,15 @@ function renderManualBoards() {
                 </div>
             `;
         }).join('');
+        const previewGuides = preview ? `
+            ${(preview.guidesX || []).map(x => `<div class="manual-snap-guide vertical" style="left:${Math.max(0, x * scale)}px;"></div>`).join('')}
+            ${(preview.guidesY || []).map(y => `<div class="manual-snap-guide horizontal" style="top:${Math.max(0, y * scale)}px;"></div>`).join('')}
+            <div class="manual-preview-block ${preview.isBobina ? 'bobina' : ''}"
+                 style="left:${preview.x * scale}px;top:${preview.y * scale}px;width:${Math.max(24, preview.length * scale)}px;height:${Math.max(24, preview.width * scale)}px;background:${preview.color || '#2563eb'};">
+                <span>${escapeHtml(preview.label)}</span>
+            </div>
+            <div class="manual-snap-badge">${escapeHtml(preview.message)}</div>
+        ` : '';
 
         const list = placed.map(token => `
             <div class="manual-placed-list-item" draggable="true" ondragstart="onManualTokenDragStart(event, '${token.id}', 'placed')">
@@ -449,11 +467,13 @@ function renderManualBoards() {
                              data-length="${slot.comprimento_m}"
                              data-width="${slot.largura_m}"
                              ondragover="onManualBoardDragOver(event)"
+                             ondragleave="onManualBoardDragLeave(event)"
                              ondrop="onManualBoardDrop(event)">
                             <div class="manual-board-cabin">Cabine</div>
                             <div class="manual-board-rear">Traseira</div>
                             <div class="manual-board-stage" style="width:${Math.max(280, slot.comprimento_m * scale)}px;height:${Math.max(120, slot.largura_m * scale)}px;">
                                 ${blocks}
+                                ${previewGuides}
                             </div>
                         </div>
                     `
@@ -545,6 +565,46 @@ function onManualTokenDragStart(event, tokenId, sourceType) {
 function onManualBoardDragOver(event) {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
+    const payload = extractManualDragPayload(event);
+    const board = event.currentTarget;
+    if (!payload || !board) return;
+
+    const token = peekManualToken(payload);
+    const stage = board.querySelector('.manual-board-stage');
+    if (!token || !stage) return;
+
+    const slotKey = board.dataset.slotKey;
+    const scale = parseFloat(board.dataset.scale || '1');
+    const stageLength = parseFloat(board.dataset.length || '0');
+    const stageWidth = parseFloat(board.dataset.width || '0');
+    const targetLastro = parseInt(document.querySelector(`.manual-board-layer[data-slot-key="${slotKey}"]`)?.value || '1', 10);
+    const rect = stage.getBoundingClientRect();
+    const x = Math.max(0, event.clientX - rect.left) / scale;
+    const y = Math.max(0, event.clientY - rect.top) / scale;
+    const snap = computeMagneticPlacement(token, slotKey, targetLastro, x, y, stageLength, stageWidth, payload.sourceType === 'placed' ? payload.tokenId : null);
+
+    manualPlanner.previews[slotKey] = {
+        x: snap.x,
+        y: snap.y,
+        length: parseFloat(token.comprimento_m || 0),
+        width: parseFloat(token.largura_m || 0),
+        color: token.color,
+        label: token.label,
+        isBobina: token.isBobina,
+        message: snap.message,
+        guidesX: snap.guidesX,
+        guidesY: snap.guidesY
+    };
+    renderManualBoards();
+}
+
+function onManualBoardDragLeave(event) {
+    const board = event.currentTarget;
+    if (!board) return;
+    const leavingTo = event.relatedTarget;
+    if (leavingTo && board.contains(leavingTo)) return;
+    delete manualPlanner.previews[board.dataset.slotKey];
+    renderManualBoards();
 }
 
 function onManualBoardDrop(event) {
@@ -566,6 +626,7 @@ function onManualBoardDrop(event) {
 
     const stageLength = parseFloat(board.dataset.length || '0');
     const stageWidth = parseFloat(board.dataset.width || '0');
+    delete manualPlanner.previews[slotKey];
     placeManualToken(token, slotKey, targetLastro, dropX / scale, dropY / scale, stageLength, stageWidth);
 }
 
@@ -610,6 +671,17 @@ function pickManualToken(payload) {
     return token;
 }
 
+function peekManualToken(payload) {
+    if (!payload) return null;
+    if (payload.sourceType === 'palette') {
+        const token = manualPlanner.palette.find(entry => entry.id === payload.tokenId);
+        return token ? structuredClone(token) : null;
+    }
+
+    const token = manualPlanner.placed.find(entry => entry.id === payload.tokenId);
+    return token ? structuredClone(token) : null;
+}
+
 function restoreManualToken(token, sourceType) {
     if (!token) return;
     if (sourceType === 'placed') {
@@ -620,15 +692,86 @@ function restoreManualToken(token, sourceType) {
 }
 
 function placeManualToken(token, slotKey, targetLastro, x, y, stageLength, stageWidth) {
-    const maxX = Math.max(0, stageLength - parseFloat(token.comprimento_m || 0));
-    const maxY = Math.max(0, stageWidth - parseFloat(token.largura_m || 0));
+    const snap = computeMagneticPlacement(token, slotKey, targetLastro, x, y, stageLength, stageWidth, token.id || null);
     token.vehicle_slot_key = slotKey;
     token.lastro_posicao = targetLastro;
-    token.posicao_x = round2(Math.min(maxX, Math.max(0, x)));
-    token.posicao_y = round2(Math.min(maxY, Math.max(0, y)));
+    token.posicao_x = snap.x;
+    token.posicao_y = snap.y;
+    token.snap_hint = snap.message;
     manualPlanner.placed.push(token);
     manualPlanner.dragPayload = null;
+    delete manualPlanner.previews[slotKey];
     renderManualPlanner();
+}
+
+function computeMagneticPlacement(token, slotKey, targetLastro, x, y, stageLength, stageWidth, movingTokenId = null) {
+    const length = parseFloat(token.comprimento_m || 0);
+    const width = parseFloat(token.largura_m || 0);
+    const maxX = Math.max(0, stageLength - length);
+    const maxY = Math.max(0, stageWidth - width);
+    let snappedX = round2(Math.min(maxX, Math.max(0, x)));
+    let snappedY = round2(Math.min(maxY, Math.max(0, y)));
+
+    const sameLayerTokens = manualPlanner.placed.filter(entry =>
+        entry.vehicle_slot_key === slotKey &&
+        parseInt(entry.lastro_posicao || 1, 10) === parseInt(targetLastro || 1, 10) &&
+        (!movingTokenId || entry.id !== movingTokenId)
+    );
+
+    const snapX = findBestSnapOnAxis(snappedX, length, stageLength, sameLayerTokens, 'x');
+    const snapY = findBestSnapOnAxis(snappedY, width, stageWidth, sameLayerTokens, 'y');
+
+    snappedX = snapX.value;
+    snappedY = snapY.value;
+
+    const messages = [snapX.reason, snapY.reason].filter(Boolean);
+    return {
+        x: snappedX,
+        y: snappedY,
+        message: messages.length ? `IMA: ${messages.join(' + ')}` : 'IMA: grade fina',
+        guidesX: snapX.guide !== null ? [snapX.guide] : [],
+        guidesY: snapY.guide !== null ? [snapY.guide] : []
+    };
+}
+
+function findBestSnapOnAxis(value, itemSize, stageSize, neighbors, axis) {
+    const cfg = manualPlanner.snapConfig;
+    const max = Math.max(0, stageSize - itemSize);
+    const candidates = [
+        { value: 0, score: cfg.edgeTolerance, reason: axis === 'x' ? 'parede frontal' : 'lateral esquerda', guide: 0 },
+        { value: max, score: cfg.edgeTolerance, reason: axis === 'x' ? 'traseira' : 'lateral direita', guide: stageSize }
+    ];
+
+    const gridValue = round2(Math.round(value / cfg.gridStep) * cfg.gridStep);
+    if (Math.abs(gridValue - value) <= cfg.gridTolerance) {
+        candidates.push({ value: clamp(gridValue, 0, max), score: cfg.gridTolerance, reason: 'grade', guide: gridValue });
+    }
+
+    neighbors.forEach(neighbor => {
+        const start = parseFloat(axis === 'x' ? neighbor.posicao_x : neighbor.posicao_y);
+        const size = parseFloat(axis === 'x' ? neighbor.comprimento_m : neighbor.largura_m);
+        const end = start + size;
+        candidates.push({ value: start, score: cfg.neighborTolerance, reason: `alinhado com ${neighbor.label || neighbor.material_codigo || 'volume'}`, guide: start });
+        candidates.push({ value: end, score: cfg.neighborTolerance, reason: `encostado em ${neighbor.label || neighbor.material_codigo || 'volume'}`, guide: end });
+        candidates.push({ value: start - itemSize, score: cfg.neighborTolerance, reason: `encaixe antes de ${neighbor.label || neighbor.material_codigo || 'volume'}`, guide: start });
+        candidates.push({ value: end - itemSize, score: cfg.neighborTolerance, reason: `alinhado pela traseira de ${neighbor.label || neighbor.material_codigo || 'volume'}`, guide: end });
+    });
+
+    let best = { value: round2(clamp(value, 0, max)), reason: '', guide: null, distance: Number.POSITIVE_INFINITY };
+    candidates.forEach(candidate => {
+        const normalized = round2(clamp(candidate.value, 0, max));
+        const distance = Math.abs(normalized - value);
+        if (distance > candidate.score + 0.0001) return;
+        if (distance < best.distance) {
+            best = { value: normalized, reason: candidate.reason, guide: candidate.guide, distance };
+        }
+    });
+
+    return best;
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
 }
 
 function buildManualStageId(slotKey) {
@@ -736,6 +879,8 @@ function createManual3DScene(stage, overlay, slot, tokens) {
     dropPlane.rotation.x = -Math.PI / 2;
     dropPlane.position.set(0, bedTopY + 0.02, 0);
     scene.add(dropPlane);
+    let previewMesh = null;
+    let previewTokenSignature = '';
 
     const meshes = [];
     tokens.forEach(token => {
@@ -769,10 +914,34 @@ function createManual3DScene(stage, overlay, slot, tokens) {
     renderer.domElement.addEventListener('dragover', (event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
-        overlay.textContent = 'Solte o item sobre a carroceria para posicionar manualmente.';
+        const payload = extractManualDragPayload(event);
+        const token = peekManualToken(payload);
+        if (!token) {
+            overlay.textContent = 'Solte o item sobre a carroceria para posicionar manualmente.';
+            return;
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObject(dropPlane, false)[0];
+        if (!hit) {
+            hideManual3DPreview();
+            overlay.textContent = 'Solte o item sobre a carroceria para posicionar manualmente.';
+            return;
+        }
+
+        const targetLastro = parseInt(document.querySelector(`.manual-board-layer[data-slot-key="${slot.slot_key}"]`)?.value || '1', 10);
+        const positionX = hit.point.x + (slot.comprimento_m / 2) - (parseFloat(token.comprimento_m || 0) / 2);
+        const positionY = hit.point.z + (slot.largura_m / 2) - (parseFloat(token.largura_m || 0) / 2);
+        const snap = computeMagneticPlacement(token, slot.slot_key, targetLastro, positionX, positionY, slot.comprimento_m, slot.largura_m, payload.sourceType === 'placed' ? payload.tokenId : null);
+        showManual3DPreview(token, targetLastro, snap);
+        overlay.textContent = `${token.label} | ${snap.message}`;
     });
 
     renderer.domElement.addEventListener('dragleave', () => {
+        hideManual3DPreview();
         overlay.textContent = 'Arraste um item da lista para dentro da carreta 3D. Mouse para rotacionar, scroll para zoom.';
     });
 
@@ -790,6 +959,7 @@ function createManual3DScene(stage, overlay, slot, tokens) {
         raycaster.setFromCamera(pointer, camera);
         const hit = raycaster.intersectObject(dropPlane, false)[0];
         if (!hit) {
+            hideManual3DPreview();
             restoreManualToken(token, payload.sourceType);
             renderManualPlanner();
             showToast('Não consegui identificar o ponto de drop na carroceria 3D.', 'warning');
@@ -799,8 +969,33 @@ function createManual3DScene(stage, overlay, slot, tokens) {
         const targetLastro = parseInt(document.querySelector(`.manual-board-layer[data-slot-key="${slot.slot_key}"]`)?.value || '1', 10);
         const positionX = hit.point.x + (slot.comprimento_m / 2) - (parseFloat(token.comprimento_m || 0) / 2);
         const positionY = hit.point.z + (slot.largura_m / 2) - (parseFloat(token.largura_m || 0) / 2);
+        hideManual3DPreview();
         placeManualToken(token, slot.slot_key, targetLastro, positionX, positionY, slot.comprimento_m, slot.largura_m);
     });
+
+    function showManual3DPreview(token, targetLastro, snap) {
+        const signature = `${token.isBobina ? 'bobina' : 'box'}:${token.comprimento_m}:${token.largura_m}:${token.altura_m}:${token.color}`;
+        if (!previewMesh || previewTokenSignature !== signature) {
+            if (previewMesh) {
+                scene.remove(previewMesh);
+            }
+            previewMesh = createManualPreviewMesh(token);
+            previewTokenSignature = signature;
+            scene.add(previewMesh);
+        }
+
+        const x = -(slot.comprimento_m / 2) + snap.x + (parseFloat(token.comprimento_m) / 2);
+        const z = -(slot.largura_m / 2) + snap.y + (parseFloat(token.largura_m) / 2);
+        const y = bedTopY + (parseFloat(token.altura_m) / 2) + (parseInt(targetLastro || 1, 10) === 2 ? 0.95 : 0.02);
+        previewMesh.position.set(x, y, z);
+        previewMesh.visible = true;
+    }
+
+    function hideManual3DPreview() {
+        if (previewMesh) {
+            previewMesh.visible = false;
+        }
+    }
 
     const animate = () => {
         rendererState.animationFrame = requestAnimationFrame(animate);
@@ -830,6 +1025,34 @@ function createManualMeshForToken(token) {
     }
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    return mesh;
+}
+
+function createManualPreviewMesh(token) {
+    const color = new THREE.Color(token.color || '#2563eb');
+    const material = new THREE.MeshStandardMaterial({
+        color,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.35,
+        metalness: 0.12,
+        emissive: color,
+        emissiveIntensity: 0.18
+    });
+    let mesh;
+    if (token.isBobina) {
+        mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(parseFloat(token.largura_m) / 2, parseFloat(token.largura_m) / 2, parseFloat(token.altura_m), 28),
+            material
+        );
+    } else {
+        mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(parseFloat(token.comprimento_m), parseFloat(token.altura_m), parseFloat(token.largura_m)),
+            material
+        );
+    }
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     return mesh;
 }
 
