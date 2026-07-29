@@ -1,15 +1,14 @@
 <?php
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
-<!-- Sidebar Navigation -->
 <aside class="sidebar-nav">
     <div class="sidebar-brand">
         <div class="brand-icon">
             <i class="fa-solid fa-truck-ramp-box"></i>
         </div>
         <div class="brand-text">
-            <h2>CUBAGEM<span>LOG</span></h2>
-            <small>Distribuição Elétrica</small>
+            <h2>CUBAGEM<span>2</span></h2>
+            <small>CD Elétrico Multi-Base</small>
         </div>
     </div>
 
@@ -31,27 +30,30 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
         <div class="menu-category">Cadastros Operacionais</div>
         <a href="veiculos.php" class="nav-link <?= $currentPage == 'veiculos.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-truck-front"></i> <span>Veículos de Carga</span>
+            <i class="fa-solid fa-truck-front"></i> <span>Veículos</span>
         </a>
         <a href="materiais.php" class="nav-link <?= $currentPage == 'materiais.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-boxes-stacked"></i> <span>Materiais & Itens</span>
+            <i class="fa-solid fa-boxes-stacked"></i> <span>Materiais</span>
         </a>
-        <a href="importar_materiais.php" class="nav-link <?= $currentPage == 'importar_materiais.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-file-import"></i> <span>Importar Lista</span>
+        <a href="bases.php" class="nav-link <?= $currentPage == 'bases.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-warehouse"></i> <span>Bases</span>
         </a>
         <a href="regras.php" class="nav-link <?= $currentPage == 'regras.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-shield-halved"></i> <span>Regras de Empilhamento</span>
+            <i class="fa-solid fa-shield-halved"></i> <span>Regras Operacionais</span>
         </a>
 
-        <div class="menu-category">Simulação & Análise</div>
+        <div class="menu-category">Pedidos & Simulação</div>
+        <a href="pedidos.php" class="nav-link <?= $currentPage == 'pedidos.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-list-check"></i> <span>Pedidos de Carga</span>
+        </a>
+        <a href="importar_materiais.php" class="nav-link <?= $currentPage == 'importar_materiais.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-file-import"></i> <span>Importações</span>
+        </a>
         <a href="simulacao.php" class="nav-link nav-link-highlight <?= $currentPage == 'simulacao.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-cube"></i> <span>Simulador Visual 3D</span>
+            <i class="fa-solid fa-cube"></i> <span>Simulador 3D</span>
         </a>
         <a href="historico.php" class="nav-link <?= $currentPage == 'historico.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-clock-rotate-left"></i> <span>Histórico de Cargas</span>
-        </a>
-        <a href="comparar.php" class="nav-link <?= $currentPage == 'comparar.php' ? 'active' : '' ?>">
-            <i class="fa-solid fa-code-compare"></i> <span>Comparar Veículos</span>
+            <i class="fa-solid fa-clock-rotate-left"></i> <span>Histórico</span>
         </a>
     </nav>
 

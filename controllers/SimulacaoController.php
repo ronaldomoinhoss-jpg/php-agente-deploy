@@ -2,25 +2,33 @@
 require_once __DIR__ . '/../models/Simulacao.php';
 
 class SimulacaoController {
-    private $model;
+    private Simulacao $model;
 
     public function __construct() {
         $this->model = new Simulacao();
     }
 
-    public function listar() {
+    public function listar(): array {
         return $this->model->listarTodas();
     }
 
-    public function buscar($id) {
+    public function buscar(int $id): ?array {
         return $this->model->buscarPorId($id);
     }
 
-    public function executar($veiculo_id, $itens_solicitados, $max_lastros = 2, $obs = '') {
-        return $this->model->executar($veiculo_id, $itens_solicitados, $max_lastros, $obs);
+    public function executar(int $pedidoId, array $frotaSelecionada, string $observacoes = ''): array {
+        return $this->model->executar($pedidoId, $frotaSelecionada, $observacoes);
     }
 
-    public function excluir($id) {
+    public function executarManual(int $pedidoId, array $frotaSelecionada, array $placements, string $observacoes = ''): array {
+        return $this->model->executarManual($pedidoId, $frotaSelecionada, $placements, $observacoes);
+    }
+
+    public function atualizarMontagemManual(int $simulacaoId, int $simulacaoVeiculoId, array $itens): array {
+        return $this->model->atualizarMontagemManual($simulacaoId, $simulacaoVeiculoId, $itens);
+    }
+
+    public function excluir(int $id): bool {
         return $this->model->excluir($id);
     }
 }

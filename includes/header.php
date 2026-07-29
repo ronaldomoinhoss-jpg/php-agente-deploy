@@ -7,11 +7,11 @@ $usuarioLogado = get_logged_user();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= isset($pageTitle) ? $pageTitle . ' - ' : '' ?>CUBAGEM LOG - Otimização de Distribuição de Cargas</title>
+    <title><?= isset($pageTitle) ? $pageTitle . ' - ' : '' ?>Cubagem2 - Planejamento Multi-Base de Cargas</title>
 
     <!-- SEO Meta Tags -->
-    <meta name="description" content="Sistema de gestão, simulação visual e otimização de distribuição de cargas em veículos de transporte Munck, Truck e Carreta para materiais de distribuição de energia elétrica.">
-    <meta name="author" content="Cubagem Logística Inteligente">
+    <meta name="description" content="Planejamento multi-base de cargas para materiais elétricos com simulação 3D, otimização de frota e relatório operacional.">
+    <meta name="author" content="Cubagem2">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

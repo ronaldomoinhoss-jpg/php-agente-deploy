@@ -2,36 +2,39 @@
 require_once __DIR__ . '/../config/conexao.php';
 require_once __DIR__ . '/../controllers/SimulacaoController.php';
 
-header('Content-Type: application/json; charset=utf-8');
-
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        throw new Exception("Método de requisição inválido.");
+        throw new Exception('Método de requisição inválido.');
     }
 
-    $rawInput = file_get_contents('php://input');
-    $inputData = json_decode($rawInput, true);
-
-    if (empty($inputData)) {
-        $inputData = $_POST;
+    $payload = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($payload) || empty($payload)) {
+        $payload = $_POST;
     }
 
-    $veiculo_id = (int)($inputData['veiculo_id'] ?? 0);
-    $max_lastros = (int)($inputData['max_lastros_permitido'] ?? 2);
-    $observacoes = sanitize_input($inputData['observacoes_operacionais'] ?? '');
-    $materiaisReq = $inputData['materiais'] ?? [];
+    $modo = sanitize_input($payload['modo'] ?? 'automatico');
+    $pedidoId = (int) ($payload['pedido_id'] ?? 0);
+    $frota = $payload['frota'] ?? [];
+    $observacoes = sanitize_input($payload['observacoes'] ?? '');
 
-    if ($veiculo_id <= 0) {
-        throw new Exception("Selecione um veículo válido para a simulação.");
+    if ($pedidoId <= 0) {
+        throw new Exception('Selecione um pedido válido para simular.');
     }
 
-    if (empty($materiaisReq) || !is_array($materiaisReq)) {
-        throw new Exception("A lista de materiais para alocação não pode estar vazia.");
+    if (empty($frota) || !is_array($frota)) {
+        throw new Exception('Informe pelo menos um veículo candidato com quantidade maior que zero.');
     }
 
     $controller = new SimulacaoController();
-    $resultado = $controller->executar($veiculo_id, $materiaisReq, $max_lastros, $observacoes);
-
+    if ($modo === 'manual') {
+        $placements = $payload['placements'] ?? [];
+        if (empty($placements) || !is_array($placements)) {
+            throw new Exception('A montagem manual precisa ter itens posicionados para salvar.');
+        }
+        $resultado = $controller->executarManual($pedidoId, $frota, $placements, $observacoes);
+    } else {
+        $resultado = $controller->executar($pedidoId, $frota, $observacoes);
+    }
     json_response('success', 'Simulação executada com sucesso!', $resultado);
 } catch (Exception $e) {
     json_response('error', $e->getMessage(), [], 400);

@@ -2,80 +2,98 @@
 require_once __DIR__ . '/../config/conexao.php';
 
 class Regra {
-    private $pdo;
+    private PDO $pdo;
 
     public function __construct() {
         global $pdo;
         $this->pdo = $pdo;
     }
 
-    public function listarTodas() {
-        $sql = "SELECT r.*, 
-                    m1.codigo as origem_codigo, m1.descricao as origem_descricao,
-                    m2.codigo as destino_codigo, m2.descricao as destino_descricao
-                FROM regras_empilhamento r
-                LEFT JOIN materiais m1 ON r.material_origem_id = m1.id
-                LEFT JOIN materiais m2 ON r.material_destino_id = m2.id
-                ORDER BY r.prioridade DESC, r.id DESC";
-        $stmt = $this->pdo->query($sql);
-        return $stmt->fetchAll();
+    public function listarTodas(): array {
+        $sql = 'SELECT r.*,
+                       mo.codigo AS origem_codigo,
+                       md.codigo AS destino_codigo
+                FROM regras_operacionais r
+                LEFT JOIN materiais mo ON mo.id = r.material_origem_id
+                LEFT JOIN materiais md ON md.id = r.material_destino_id
+                ORDER BY r.ativo DESC, r.severidade DESC, r.id DESC';
+        return $this->pdo->query($sql)->fetchAll();
     }
 
-    public function listarAtivas() {
-        $sql = "SELECT r.*, 
-                    m1.codigo as origem_codigo, m1.descricao as origem_descricao, m1.tipo as origem_tipo,
-                    m2.codigo as destino_codigo, m2.descricao as destino_descricao, m2.tipo as destino_tipo
-                FROM regras_empilhamento r
-                LEFT JOIN materiais m1 ON r.material_origem_id = m1.id
-                LEFT JOIN materiais m2 ON r.material_destino_id = m2.id
+    public function listarAtivas(): array {
+        $sql = 'SELECT r.*,
+                       mo.codigo AS origem_codigo,
+                       mo.categoria AS origem_categoria_material,
+                       md.codigo AS destino_codigo,
+                       md.categoria AS destino_categoria_material
+                FROM regras_operacionais r
+                LEFT JOIN materiais mo ON mo.id = r.material_origem_id
+                LEFT JOIN materiais md ON md.id = r.material_destino_id
                 WHERE r.ativo = 1
-                ORDER BY r.prioridade DESC";
-        $stmt = $this->pdo->query($sql);
-        return $stmt->fetchAll();
+                ORDER BY CASE r.severidade WHEN "bloqueante" THEN 2 ELSE 1 END DESC, r.id ASC';
+        return $this->pdo->query($sql)->fetchAll();
     }
 
-    public function buscarPorId($id) {
-        $stmt = $this->pdo->prepare("SELECT * FROM regras_empilhamento WHERE id = ?");
+    public function buscarPorId(int $id): ?array {
+        $stmt = $this->pdo->prepare('SELECT * FROM regras_operacionais WHERE id = ?');
         $stmt->execute([$id]);
-        return $stmt->fetch();
+        return $stmt->fetch() ?: null;
     }
 
-    public function salvar($data) {
-        $id = !empty($data['id']) ? (int)$data['id'] : null;
-        $material_origem_id = !empty($data['material_origem_id']) ? (int)$data['material_origem_id'] : null;
-        $tipo_material_origem = !empty($data['tipo_material_origem']) ? sanitize_input($data['tipo_material_origem']) : null;
-        
-        $material_destino_id = !empty($data['material_destino_id']) ? (int)$data['material_destino_id'] : null;
-        $tipo_material_destino = !empty($data['tipo_material_destino']) ? sanitize_input($data['tipo_material_destino']) : null;
-
-        $tipo_regra = sanitize_input($data['tipo_regra']);
-        $prioridade = in_array($data['prioridade'] ?? '', ['baixa', 'media', 'alta', 'bloqueante']) ? $data['prioridade'] : 'media';
+    public function salvar(array $data): int {
+        $id = !empty($data['id']) ? (int) $data['id'] : null;
+        $materialOrigemId = !empty($data['material_origem_id']) ? (int) $data['material_origem_id'] : null;
+        $categoriaOrigem = sanitize_input($data['categoria_origem'] ?? '');
+        $materialDestinoId = !empty($data['material_destino_id']) ? (int) $data['material_destino_id'] : null;
+        $categoriaDestino = sanitize_input($data['categoria_destino'] ?? '');
+        $tipoRegra = sanitize_input($data['tipo_regra'] ?? '');
+        $severidade = sanitize_input($data['severidade'] ?? 'alerta');
         $justificativa = sanitize_input($data['justificativa'] ?? '');
-        $ativo = isset($data['ativo']) && $data['ativo'] == '1' ? 1 : 0;
+        $ativo = parse_bool_flag($data['ativo'] ?? 0) ? 1 : 0;
 
-        if (empty($tipo_regra)) {
-            throw new Exception("Selecione o tipo da regra.");
+        if ($tipoRegra === '') {
+            throw new Exception('Informe o tipo da regra operacional.');
         }
+
+        if (!in_array($severidade, ['alerta', 'bloqueante'], true)) {
+            $severidade = 'alerta';
+        }
+
+        $payload = [
+            $materialOrigemId ?: null,
+            $categoriaOrigem !== '' ? $categoriaOrigem : null,
+            $materialDestinoId ?: null,
+            $categoriaDestino !== '' ? $categoriaDestino : null,
+            $tipoRegra,
+            $severidade,
+            $justificativa,
+            $ativo,
+        ];
 
         if ($id) {
-            $stmt = $this->pdo->prepare("UPDATE regras_empilhamento SET 
-                material_origem_id = ?, tipo_material_origem = ?, 
-                material_destino_id = ?, tipo_material_destino = ?, 
-                tipo_regra = ?, prioridade = ?, justificativa = ?, ativo = ? 
-                WHERE id = ?");
-            $stmt->execute([$material_origem_id, $tipo_material_origem, $material_destino_id, $tipo_material_destino, $tipo_regra, $prioridade, $justificativa, $ativo, $id]);
+            $stmt = $this->pdo->prepare(
+                'UPDATE regras_operacionais SET
+                    material_origem_id = ?, categoria_origem = ?, material_destino_id = ?, categoria_destino = ?,
+                    tipo_regra = ?, severidade = ?, justificativa = ?, ativo = ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?'
+            );
+            $payload[] = $id;
+            $stmt->execute($payload);
             return $id;
-        } else {
-            $stmt = $this->pdo->prepare("INSERT INTO regras_empilhamento 
-                (material_origem_id, tipo_material_origem, material_destino_id, tipo_material_destino, tipo_regra, prioridade, justificativa, ativo) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$material_origem_id, $tipo_material_origem, $material_destino_id, $tipo_material_destino, $tipo_regra, $prioridade, $justificativa, $ativo]);
-            return $this->pdo->lastInsertId();
         }
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO regras_operacionais
+                (material_origem_id, categoria_origem, material_destino_id, categoria_destino, tipo_regra, severidade, justificativa, ativo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute($payload);
+        return (int) $this->pdo->lastInsertId();
     }
 
-    public function excluir($id) {
-        $stmt = $this->pdo->prepare("DELETE FROM regras_empilhamento WHERE id = ?");
-        return $stmt->execute([(int)$id]);
+    public function excluir(int $id): bool {
+        $stmt = $this->pdo->prepare('DELETE FROM regras_operacionais WHERE id = ?');
+        return $stmt->execute([$id]);
     }
 }
+

@@ -1,11 +1,11 @@
 <?php
-require_once __DIR__ . '/../models/Veiculo.php';
+require_once __DIR__ . '/../models/PedidoCarga.php';
 
-class VeiculoController {
-    private Veiculo $model;
+class PedidoCargaController {
+    private PedidoCarga $model;
 
     public function __construct() {
-        $this->model = new Veiculo();
+        $this->model = new PedidoCarga();
     }
 
     public function listar(): array {
@@ -24,4 +24,3 @@ class VeiculoController {
         return $this->model->excluir($id);
     }
 }
-
