@@ -562,6 +562,12 @@ h1, h2, h3, h4, h5, h6 {
     overflow-x: auto;
 }
 
+.manual-board-dropzone-3d {
+    padding: 12px;
+    overflow: hidden;
+    background: linear-gradient(180deg, #dbeafe 0%, #eff6ff 40%, #f8fafc 100%);
+}
+
 .manual-board-cabin,
 .manual-board-rear {
     position: absolute;
@@ -599,6 +605,26 @@ h1, h2, h3, h4, h5, h6 {
     inset: 0;
     background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), transparent 18%, transparent 82%, rgba(245, 158, 11, 0.08));
     pointer-events: none;
+}
+
+.manual-3d-stage {
+    width: 100%;
+    min-height: 260px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(100, 116, 139, 0.35);
+    background: linear-gradient(180deg, #f8fafc 0%, #dbeafe 100%);
+}
+
+.manual-3d-overlay {
+    font-size: 0.76rem;
+    color: #0f172a;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 12px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    box-shadow: var(--shadow-sm);
 }
 
 .manual-placed-block {

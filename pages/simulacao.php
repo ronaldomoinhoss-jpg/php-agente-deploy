@@ -133,9 +133,17 @@ $pedidoPreSelecionado = (int) ($_GET['pedido_id'] ?? 0);
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <div>
                                         <strong>Veículos para drop</strong>
-                                        <div class="small text-muted">Escolha o lastro de destino em cada veículo antes de soltar o item.</div>
+                                        <div class="small text-muted">Escolha o lastro de destino em cada veículo antes de soltar o item. Você pode montar em 2D ou 3D.</div>
                                     </div>
-                                    <span class="badge bg-light text-dark border" id="manualSummaryBadge">0 itens posicionados</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="btn-group btn-group-sm" role="group" aria-label="Modo de montagem manual">
+                                            <input type="radio" class="btn-check" name="manual_board_mode" id="manual_board_mode_2d" autocomplete="off" checked onchange="setManualBoardMode('2d')">
+                                            <label class="btn btn-outline-primary" for="manual_board_mode_2d">2D</label>
+                                            <input type="radio" class="btn-check" name="manual_board_mode" id="manual_board_mode_3d" autocomplete="off" onchange="setManualBoardMode('3d')">
+                                            <label class="btn btn-outline-primary" for="manual_board_mode_3d">3D</label>
+                                        </div>
+                                        <span class="badge bg-light text-dark border" id="manualSummaryBadge">0 itens posicionados</span>
+                                    </div>
                                 </div>
                                 <div id="manualBoards" class="manual-boards"></div>
                             </div>
@@ -157,7 +165,9 @@ const manualPlanner = {
     placed: [],
     selectedIds: new Set(),
     dragPayload: null,
-    slotDefs: []
+    slotDefs: [],
+    boardMode: '2d',
+    renderers: {}
 };
 
 function getCurrentMode() {
@@ -336,6 +346,12 @@ function renderManualPlanner() {
     updateManualSummary();
 }
 
+function setManualBoardMode(mode) {
+    if (!['2d', '3d'].includes(mode)) return;
+    manualPlanner.boardMode = mode;
+    renderManualBoards();
+}
+
 function renderManualPalette() {
     const container = document.getElementById('manualPalette');
     if (!container) return;
@@ -368,6 +384,7 @@ function renderManualPalette() {
 function renderManualBoards() {
     const container = document.getElementById('manualBoards');
     if (!container) return;
+    destroyManual3DScenes();
 
     if (!manualPlanner.slotDefs.length) {
         container.innerHTML = '<div class="text-center text-muted py-5 border rounded-4 bg-light">Defina pelo menos um veículo com quantidade maior que zero para montar manualmente.</div>';
@@ -394,7 +411,7 @@ function renderManualBoards() {
         }).join('');
 
         const list = placed.map(token => `
-            <div class="manual-placed-list-item">
+            <div class="manual-placed-list-item" draggable="true" ondragstart="onManualTokenDragStart(event, '${token.id}', 'placed')">
                 <div>
                     <div class="fw-semibold small">${escapeHtml(token.label)}</div>
                     <div class="text-muted xsmall">${token.comprimento_m.toFixed(2)} x ${token.largura_m.toFixed(2)} m</div>
@@ -424,23 +441,37 @@ function renderManualBoards() {
                         </select>
                     </div>
                 </div>
-                <div class="manual-board-dropzone"
-                     data-slot-key="${slot.slot_key}"
-                     data-scale="${scale}"
-                     data-length="${slot.comprimento_m}"
-                     data-width="${slot.largura_m}"
-                     ondragover="onManualBoardDragOver(event)"
-                     ondrop="onManualBoardDrop(event)">
-                    <div class="manual-board-cabin">Cabine</div>
-                    <div class="manual-board-rear">Traseira</div>
-                    <div class="manual-board-stage" style="width:${Math.max(280, slot.comprimento_m * scale)}px;height:${Math.max(120, slot.largura_m * scale)}px;">
-                        ${blocks}
-                    </div>
-                </div>
+                ${manualPlanner.boardMode === '2d'
+                    ? `
+                        <div class="manual-board-dropzone"
+                             data-slot-key="${slot.slot_key}"
+                             data-scale="${scale}"
+                             data-length="${slot.comprimento_m}"
+                             data-width="${slot.largura_m}"
+                             ondragover="onManualBoardDragOver(event)"
+                             ondrop="onManualBoardDrop(event)">
+                            <div class="manual-board-cabin">Cabine</div>
+                            <div class="manual-board-rear">Traseira</div>
+                            <div class="manual-board-stage" style="width:${Math.max(280, slot.comprimento_m * scale)}px;height:${Math.max(120, slot.largura_m * scale)}px;">
+                                ${blocks}
+                            </div>
+                        </div>
+                    `
+                    : `
+                        <div class="manual-board-dropzone manual-board-dropzone-3d">
+                            <div class="manual-3d-overlay" id="${buildManualOverlayId(slot.slot_key)}">Arraste um item da lista para dentro da carreta 3D. Mouse para rotacionar, scroll para zoom.</div>
+                            <div class="manual-3d-stage" id="${buildManualStageId(slot.slot_key)}"></div>
+                        </div>
+                    `
+                }
                 <div class="manual-placed-list mt-3">${list || '<div class="text-muted small">Nenhum item posicionado neste veículo.</div>'}</div>
             </div>
         `;
     }).join('');
+
+    if (manualPlanner.boardMode === '3d') {
+        requestAnimationFrame(renderManual3DBoards);
+    }
 }
 
 function updateManualSummary() {
@@ -518,11 +549,7 @@ function onManualBoardDragOver(event) {
 
 function onManualBoardDrop(event) {
     event.preventDefault();
-    const raw = event.dataTransfer.getData('text/plain');
-    let payload = manualPlanner.dragPayload;
-    if (raw) {
-        try { payload = JSON.parse(raw); } catch (_) {}
-    }
+    const payload = extractManualDragPayload(event);
     if (!payload) return;
 
     const board = event.currentTarget;
@@ -534,31 +561,12 @@ function onManualBoardDrop(event) {
     const dropY = Math.max(0, event.clientY - rect.top);
     const targetLastro = parseInt(document.querySelector(`.manual-board-layer[data-slot-key="${slotKey}"]`)?.value || '1', 10);
 
-    let token = null;
-    if (payload.sourceType === 'palette') {
-        const index = manualPlanner.palette.findIndex(entry => entry.id === payload.tokenId);
-        if (index < 0) return;
-        token = structuredClone(manualPlanner.palette[index]);
-        manualPlanner.palette.splice(index, 1);
-    } else {
-        const index = manualPlanner.placed.findIndex(entry => entry.id === payload.tokenId);
-        if (index < 0) return;
-        token = manualPlanner.placed[index];
-        manualPlanner.placed.splice(index, 1);
-    }
+    const token = pickManualToken(payload);
+    if (!token) return;
 
     const stageLength = parseFloat(board.dataset.length || '0');
     const stageWidth = parseFloat(board.dataset.width || '0');
-    const maxX = Math.max(0, stageLength - parseFloat(token.comprimento_m || 0));
-    const maxY = Math.max(0, stageWidth - parseFloat(token.largura_m || 0));
-
-    token.vehicle_slot_key = slotKey;
-    token.lastro_posicao = targetLastro;
-    token.posicao_x = round2(Math.min(maxX, Math.max(0, dropX / scale)));
-    token.posicao_y = round2(Math.min(maxY, Math.max(0, dropY / scale)));
-    manualPlanner.placed.push(token);
-    manualPlanner.dragPayload = null;
-    renderManualPlanner();
+    placeManualToken(token, slotKey, targetLastro, dropX / scale, dropY / scale, stageLength, stageWidth);
 }
 
 function updatePlacedLastro(tokenId, value) {
@@ -574,6 +582,255 @@ function returnPlacedToken(tokenId) {
     manualPlanner.palette.push(stripPlacement(manualPlanner.placed[index]));
     manualPlanner.placed.splice(index, 1);
     renderManualPlanner();
+}
+
+function extractManualDragPayload(event) {
+    const raw = event.dataTransfer.getData('text/plain');
+    let payload = manualPlanner.dragPayload;
+    if (raw) {
+        try { payload = JSON.parse(raw); } catch (_) {}
+    }
+    return payload;
+}
+
+function pickManualToken(payload) {
+    if (!payload) return null;
+    if (payload.sourceType === 'palette') {
+        const index = manualPlanner.palette.findIndex(entry => entry.id === payload.tokenId);
+        if (index < 0) return null;
+        const token = structuredClone(manualPlanner.palette[index]);
+        manualPlanner.palette.splice(index, 1);
+        return token;
+    }
+
+    const index = manualPlanner.placed.findIndex(entry => entry.id === payload.tokenId);
+    if (index < 0) return null;
+    const token = structuredClone(manualPlanner.placed[index]);
+    manualPlanner.placed.splice(index, 1);
+    return token;
+}
+
+function restoreManualToken(token, sourceType) {
+    if (!token) return;
+    if (sourceType === 'placed') {
+        manualPlanner.placed.push(token);
+        return;
+    }
+    manualPlanner.palette.push(stripPlacement(token));
+}
+
+function placeManualToken(token, slotKey, targetLastro, x, y, stageLength, stageWidth) {
+    const maxX = Math.max(0, stageLength - parseFloat(token.comprimento_m || 0));
+    const maxY = Math.max(0, stageWidth - parseFloat(token.largura_m || 0));
+    token.vehicle_slot_key = slotKey;
+    token.lastro_posicao = targetLastro;
+    token.posicao_x = round2(Math.min(maxX, Math.max(0, x)));
+    token.posicao_y = round2(Math.min(maxY, Math.max(0, y)));
+    manualPlanner.placed.push(token);
+    manualPlanner.dragPayload = null;
+    renderManualPlanner();
+}
+
+function buildManualStageId(slotKey) {
+    return `manual3d-stage-${sanitizeDomId(slotKey)}`;
+}
+
+function buildManualOverlayId(slotKey) {
+    return `manual3d-overlay-${sanitizeDomId(slotKey)}`;
+}
+
+function sanitizeDomId(value) {
+    return String(value).replaceAll(':', '-').replaceAll(' ', '-');
+}
+
+function destroyManual3DScenes() {
+    Object.values(manualPlanner.renderers).forEach(state => {
+        if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
+        if (state.controls) state.controls.dispose();
+        if (state.renderer) state.renderer.dispose();
+    });
+    manualPlanner.renderers = {};
+}
+
+function renderManual3DBoards() {
+    if (!window.THREE) {
+        showToast('Three.js não está disponível para a montagem 3D.', 'error');
+        return;
+    }
+
+    manualPlanner.slotDefs.forEach(slot => {
+        const stage = document.getElementById(buildManualStageId(slot.slot_key));
+        const overlay = document.getElementById(buildManualOverlayId(slot.slot_key));
+        if (!stage || !overlay) return;
+
+        const tokens = manualPlanner.placed.filter(token => token.vehicle_slot_key === slot.slot_key);
+        const rendererState = createManual3DScene(stage, overlay, slot, tokens);
+        manualPlanner.renderers[slot.slot_key] = rendererState;
+    });
+}
+
+function createManual3DScene(stage, overlay, slot, tokens) {
+    const widthPx = Math.max(320, stage.clientWidth || 320);
+    const heightPx = 260;
+    stage.innerHTML = '';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xe2e8f0);
+
+    const camera = new THREE.PerspectiveCamera(42, widthPx / heightPx, 0.1, 1000);
+    camera.position.set(slot.comprimento_m * 1.05, slot.altura_m * 2.4, slot.largura_m * 2.3);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(widthPx, heightPx);
+    renderer.shadowMap.enabled = true;
+    stage.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, slot.altura_m * 0.45, 0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.92));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.95);
+    sun.position.set(slot.comprimento_m, slot.altura_m * 4, slot.largura_m * 2);
+    sun.castShadow = true;
+    scene.add(sun);
+
+    const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(slot.comprimento_m * 2.2, slot.largura_m * 1.8),
+        new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.95, metalness: 0.02 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const bedTopY = 0.18;
+    const bed = new THREE.Mesh(
+        new THREE.BoxGeometry(slot.comprimento_m, 0.18, slot.largura_m),
+        new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7, metalness: 0.22 })
+    );
+    bed.position.set(0, bedTopY / 2, 0);
+    bed.castShadow = true;
+    bed.receiveShadow = true;
+    scene.add(bed);
+
+    const walls = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(slot.comprimento_m, slot.altura_m, slot.largura_m)),
+        new THREE.LineBasicMaterial({ color: 0x64748b })
+    );
+    walls.position.set(0, slot.altura_m / 2 + bedTopY, 0);
+    scene.add(walls);
+
+    const cabin = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, slot.altura_m + 0.7, slot.largura_m * 0.94),
+        new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4, metalness: 0.18 })
+    );
+    cabin.position.set(-(slot.comprimento_m / 2) - 0.85, (slot.altura_m + 0.7) / 2, 0);
+    cabin.castShadow = true;
+    scene.add(cabin);
+
+    const dropPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(slot.comprimento_m, slot.largura_m),
+        new THREE.MeshBasicMaterial({ visible: false })
+    );
+    dropPlane.rotation.x = -Math.PI / 2;
+    dropPlane.position.set(0, bedTopY + 0.02, 0);
+    scene.add(dropPlane);
+
+    const meshes = [];
+    tokens.forEach(token => {
+        const mesh = createManualMeshForToken(token);
+        const x = -(slot.comprimento_m / 2) + parseFloat(token.posicao_x) + (parseFloat(token.comprimento_m) / 2);
+        const z = -(slot.largura_m / 2) + parseFloat(token.posicao_y) + (parseFloat(token.largura_m) / 2);
+        const y = bedTopY + (parseFloat(token.altura_m) / 2) + ((parseInt(token.lastro_posicao || 1, 10) === 2) ? 0.95 : 0.02);
+        mesh.position.set(x, y, z);
+        mesh.userData = token;
+        meshes.push(mesh);
+        scene.add(mesh);
+    });
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+
+    renderer.domElement.addEventListener('pointermove', (event) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(meshes, false)[0];
+        if (!hit) {
+            overlay.textContent = 'Arraste um item da lista para dentro da carreta 3D. Mouse para rotacionar, scroll para zoom.';
+            return;
+        }
+        const token = hit.object.userData;
+        overlay.textContent = `${token.label} | ${token.comprimento_m.toFixed(2)} x ${token.largura_m.toFixed(2)} m | lastro ${token.lastro_posicao}`;
+    });
+
+    renderer.domElement.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        overlay.textContent = 'Solte o item sobre a carroceria para posicionar manualmente.';
+    });
+
+    renderer.domElement.addEventListener('dragleave', () => {
+        overlay.textContent = 'Arraste um item da lista para dentro da carreta 3D. Mouse para rotacionar, scroll para zoom.';
+    });
+
+    renderer.domElement.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const payload = extractManualDragPayload(event);
+        if (!payload) return;
+
+        const token = pickManualToken(payload);
+        if (!token) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObject(dropPlane, false)[0];
+        if (!hit) {
+            restoreManualToken(token, payload.sourceType);
+            renderManualPlanner();
+            showToast('Não consegui identificar o ponto de drop na carroceria 3D.', 'warning');
+            return;
+        }
+
+        const targetLastro = parseInt(document.querySelector(`.manual-board-layer[data-slot-key="${slot.slot_key}"]`)?.value || '1', 10);
+        const positionX = hit.point.x + (slot.comprimento_m / 2) - (parseFloat(token.comprimento_m || 0) / 2);
+        const positionY = hit.point.z + (slot.largura_m / 2) - (parseFloat(token.largura_m || 0) / 2);
+        placeManualToken(token, slot.slot_key, targetLastro, positionX, positionY, slot.comprimento_m, slot.largura_m);
+    });
+
+    const animate = () => {
+        rendererState.animationFrame = requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    };
+    const rendererState = { renderer, controls, animationFrame: null };
+    animate();
+
+    return rendererState;
+}
+
+function createManualMeshForToken(token) {
+    const color = new THREE.Color(token.color || '#2563eb');
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.48, metalness: 0.16 });
+    let mesh;
+    if (token.isBobina) {
+        mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(parseFloat(token.largura_m) / 2, parseFloat(token.largura_m) / 2, parseFloat(token.altura_m), 28),
+            material
+        );
+    } else {
+        mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(parseFloat(token.comprimento_m), parseFloat(token.altura_m), parseFloat(token.largura_m)),
+            material
+        );
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
 }
 
 function buildManualPlacementsPayload() {
