@@ -80,18 +80,10 @@ class Simulacao {
     }
 
     public function executar(int $pedidoId, array $frotaSelecionada, string $observacoes = ''): array {
-        $pedidoModel = new PedidoCarga();
         $veiculoModel = new Veiculo();
         $regraModel = new Regra();
 
-        $pedido = $pedidoModel->buscarPorId($pedidoId);
-        if (!$pedido) {
-            throw new Exception('Pedido de carga não encontrado.');
-        }
-
-        if (empty($pedido['itens'])) {
-            throw new Exception('O pedido selecionado não possui itens para simulação.');
-        }
+        $pedido = $this->buildPedidoBundle([$pedidoId]);
 
         $regras = $regraModel->listarAtivas();
         $slots = $this->buildVehicleSlots($frotaSelecionada, $veiculoModel);
@@ -124,19 +116,50 @@ class Simulacao {
         return $this->buscarPorId($simId);
     }
 
+    public function executarPedidos(array $pedidoIds, array $frotaSelecionada, string $observacoes = ''): array {
+        $pedidoIds = array_values(array_filter(array_map('intval', $pedidoIds), static fn($id) => $id > 0));
+        if (empty($pedidoIds)) {
+            throw new Exception('Selecione pelo menos um pedido para a simulação.');
+        }
+
+        $veiculoModel = new Veiculo();
+        $regraModel = new Regra();
+        $pedido = $this->buildPedidoBundle($pedidoIds);
+
+        $regras = $regraModel->listarAtivas();
+        $slots = $this->buildVehicleSlots($frotaSelecionada, $veiculoModel);
+        if (empty($slots)) {
+            throw new Exception('Selecione ao menos um veículo candidato para a simulação.');
+        }
+
+        $units = $this->expandPedidoItens($pedido['itens']);
+        $bestResult = null;
+        $slotCount = count($slots);
+        for ($size = 1; $size <= $slotCount; $size++) {
+            foreach ($this->generateCombinations($slots, $size) as $combo) {
+                $result = $this->simulateCombination($combo, $units, $regras);
+                if ($bestResult === null || $result['score_total'] < $bestResult['score_total']) {
+                    $bestResult = $result;
+                }
+            }
+            if ($bestResult && $bestResult['qtd_itens_nao_alocados'] === 0) {
+                break;
+            }
+        }
+
+        if ($bestResult === null) {
+            throw new Exception('Não foi possível gerar uma proposta de alocação.');
+        }
+
+        $simId = $this->persistSimulation($pedido, $bestResult, $observacoes);
+        return $this->buscarPorId($simId);
+    }
+
     public function executarManual(int $pedidoId, array $frotaSelecionada, array $placements, string $observacoes = ''): array {
-        $pedidoModel = new PedidoCarga();
         $veiculoModel = new Veiculo();
         $regraModel = new Regra();
 
-        $pedido = $pedidoModel->buscarPorId($pedidoId);
-        if (!$pedido) {
-            throw new Exception('Pedido de carga não encontrado.');
-        }
-
-        if (empty($pedido['itens'])) {
-            throw new Exception('O pedido selecionado não possui itens para montagem manual.');
-        }
+        $pedido = $this->buildPedidoBundle([$pedidoId]);
 
         $regras = $regraModel->listarAtivas();
         $slots = $this->buildVehicleSlots($frotaSelecionada, $veiculoModel);
@@ -266,6 +289,139 @@ class Simulacao {
         return $this->buscarPorId($simId);
     }
 
+    public function executarManualPedidos(array $pedidoIds, array $frotaSelecionada, array $placements, string $observacoes = ''): array {
+        $pedidoIds = array_values(array_filter(array_map('intval', $pedidoIds), static fn($id) => $id > 0));
+        if (empty($pedidoIds)) {
+            throw new Exception('Selecione pelo menos um pedido para a montagem manual.');
+        }
+
+        $veiculoModel = new Veiculo();
+        $regraModel = new Regra();
+        $pedido = $this->buildPedidoBundle($pedidoIds);
+
+        $regras = $regraModel->listarAtivas();
+        $slots = $this->buildVehicleSlots($frotaSelecionada, $veiculoModel);
+        if (empty($slots)) {
+            throw new Exception('Selecione ao menos um veículo candidato para a montagem manual.');
+        }
+
+        $units = $this->expandPedidoItens($pedido['itens']);
+        $unitsByKey = [];
+        foreach ($units as $unit) {
+            $unitsByKey[$unit['unit_key']] = $unit;
+        }
+
+        $statesBySlotKey = [];
+        foreach ($slots as $slot) {
+            $statesBySlotKey[$slot['slot_key']] = [
+                'veiculo' => $slot,
+                'slot_codigo' => $slot['slot_codigo'],
+                'placements' => [],
+                'peso_total_kg' => 0.0,
+                'volume_total_m3' => 0.0,
+            ];
+        }
+
+        $usedUnitKeys = [];
+        foreach ($placements as $placementInput) {
+            $unitKey = (string) ($placementInput['unit_key'] ?? '');
+            $slotKey = (string) ($placementInput['vehicle_slot_key'] ?? '');
+            if ($unitKey === '' || $slotKey === '') {
+                throw new Exception('Cada item manual precisa informar a unidade e o veículo de destino.');
+            }
+            if (!isset($unitsByKey[$unitKey])) {
+                throw new Exception("Unidade manual '{$unitKey}' não encontrada no conjunto de pedidos.");
+            }
+            if (!isset($statesBySlotKey[$slotKey])) {
+                throw new Exception("Veículo manual '{$slotKey}' não encontrado na frota selecionada.");
+            }
+            if (isset($usedUnitKeys[$unitKey])) {
+                throw new Exception("A unidade '{$unitKey}' foi posicionada mais de uma vez.");
+            }
+
+            $unit = $unitsByKey[$unitKey];
+            $placement = $this->buildManualPlacementPayload($unit, $placementInput);
+            $statesBySlotKey[$slotKey]['placements'][] = $placement;
+            $statesBySlotKey[$slotKey]['peso_total_kg'] += $placement['peso_unitario_kg'];
+            $statesBySlotKey[$slotKey]['volume_total_m3'] += $placement['volume_unitario_m3'];
+            $usedUnitKeys[$unitKey] = true;
+        }
+
+        $unallocated = [];
+        foreach ($units as $unit) {
+            if (isset($usedUnitKeys[$unit['unit_key']])) {
+                continue;
+            }
+            $unit['status_alocacao'] = 'nao_alocado';
+            $unit['observacoes_restricao'] = 'Unidade não posicionada na montagem manual.';
+            $unallocated[] = $unit;
+        }
+
+        $vehicles = [];
+        $alerts = [];
+        $rulesApplied = [];
+        $totalBlockingViolations = 0;
+        $pesoTotal = 0.0;
+        $volumeTotal = 0.0;
+        $usedVehicles = 0;
+        $scoreTotal = 0.0;
+
+        foreach ($statesBySlotKey as $state) {
+            if (empty($state['placements'])) {
+                continue;
+            }
+            $validated = $this->validateDraftVehicleState($state, $regras);
+            $vehicles[] = $validated;
+            $usedVehicles++;
+            $pesoTotal += $validated['peso_total_kg'];
+            $volumeTotal += $validated['volume_total_m3'];
+            $totalBlockingViolations += $validated['blocking_violations'];
+            $scoreTotal += ($validated['blocking_violations'] * 100000) + ($validated['remanejo_penalty'] * 250) + $validated['balance_penalty'] + $validated['waste_penalty'];
+            $alerts = array_merge($alerts, $validated['alertas']);
+            $rulesApplied = array_merge($rulesApplied, $validated['regras_aplicadas']);
+        }
+
+        foreach ($unallocated as $item) {
+            $alerts[] = [
+                'simulacao_veiculo_id' => null,
+                'tipo_alerta' => 'item_nao_alocado',
+                'severidade' => 'danger',
+                'mensagem' => "{$item['codigo_material']} para {$item['base_nome']} não foi alocado na montagem manual.",
+            ];
+        }
+
+        $scoreTotal += (count($unallocated) * 25000) + ($usedVehicles * 400);
+        $status = 'aprovado';
+        if ($totalBlockingViolations > 0 || count($unallocated) > 0) {
+            $status = 'reprovado';
+        } else {
+            foreach ($alerts as $alert) {
+                if (in_array($alert['severidade'], ['warning', 'danger'], true)) {
+                    $status = 'aprovado_com_alerta';
+                    break;
+                }
+            }
+        }
+
+        $result = [
+            'score_total' => round($scoreTotal, 2),
+            'status' => $status,
+            'veiculos' => $vehicles,
+            'itens_nao_alocados' => $unallocated,
+            'alertas' => $alerts,
+            'regras_aplicadas' => $rulesApplied,
+            'qtd_itens_total' => count($units),
+            'qtd_itens_alocados' => count($units) - count($unallocated),
+            'qtd_itens_nao_alocados' => count($unallocated),
+            'peso_total_kg' => round($pesoTotal, 2),
+            'volume_total_m3' => round($volumeTotal, 4),
+            'total_veiculos' => $usedVehicles,
+        ];
+
+        $simId = $this->persistSimulation($pedido, $result, $observacoes);
+        return $this->buscarPorId($simId);
+    }
+
     public function atualizarMontagemManual(int $simulacaoId, int $simulacaoVeiculoId, array $itens): array {
         $simulacao = $this->buscarPorId($simulacaoId);
         if (!$simulacao) {
@@ -323,7 +479,7 @@ class Simulacao {
                 'observacoes_restricao' => $this->appendManualTag(
                     (string) ($stored['observacoes_restricao'] ?? ''),
                     $this->isBobinaPlacement($stored)
-                        ? 'Montagem manual com bobina mantida em pe.'
+                        ? 'Montagem manual com bobina deitada.'
                         : 'Montagem manual atualizada.'
                 ),
             ]);
@@ -414,6 +570,7 @@ class Simulacao {
 
         $units = [];
         foreach ($itens as $item) {
+            $effectiveDims = $this->normalizeTransportDimensions($item);
             $quantidade = max(1, (int) $item['quantidade']);
             $groupKey = implode(':', [(int) $item['id'], $item['material_id'], $item['base_id'], $item['ordem_entrega']]);
             for ($i = 1; $i <= $quantidade; $i++) {
@@ -428,9 +585,9 @@ class Simulacao {
                     'formato_fisico' => $item['formato_fisico'],
                     'peso_unitario_kg' => (float) $item['peso_unitario_kg'],
                     'volume_unitario_m3' => (float) $item['volume_unitario_m3'],
-                    'comprimento_m' => (float) $item['comprimento_m'],
-                    'largura_m' => (float) $item['largura_m'],
-                    'altura_m' => (float) $item['altura_m'],
+                    'comprimento_m' => $effectiveDims['comprimento_m'],
+                    'largura_m' => $effectiveDims['largura_m'],
+                    'altura_m' => $effectiveDims['altura_m'],
                     'empilhavel' => (int) $item['empilhavel'],
                     'max_lastros' => (int) $item['max_lastros'],
                     'perfil_empilhamento' => $item['perfil_empilhamento'],
@@ -881,12 +1038,100 @@ class Simulacao {
         ];
     }
 
+    private function buildPedidoBundle(array $pedidoIds): array {
+        $pedidoIds = array_values(array_unique(array_filter(array_map('intval', $pedidoIds), static fn($id) => $id > 0)));
+        if (empty($pedidoIds)) {
+            throw new Exception('Nenhum pedido válido foi informado para a simulação.');
+        }
+
+        $pedidoModel = new PedidoCarga();
+        $pedidos = [];
+        foreach ($pedidoIds as $pedidoId) {
+            $pedido = $pedidoModel->buscarPorId($pedidoId);
+            if (!$pedido) {
+                throw new Exception("Pedido {$pedidoId} não encontrado.");
+            }
+            $pedidos[] = $pedido;
+        }
+
+        if (count($pedidos) === 1) {
+            return $pedidos[0];
+        }
+
+        $itens = [];
+        $codigos = [];
+        $descricoes = [];
+        foreach ($pedidos as $pedido) {
+            $codigos[] = $pedido['codigo_pedido'];
+            $descricoes[] = $pedido['descricao'];
+
+            foreach ($pedido['itens'] as $item) {
+                $item['pedido_origem_id'] = (int) $pedido['id'];
+                $item['pedido_codigo'] = $pedido['codigo_pedido'];
+                $item['pedido_descricao'] = $pedido['descricao'];
+                $obsOrigem = trim((string) ($item['observacoes_item'] ?? ''));
+                $item['observacoes_item'] = trim($obsOrigem . ($obsOrigem !== '' ? ' | ' : '') . 'Pedido origem: ' . $pedido['codigo_pedido']);
+                $itens[] = $item;
+            }
+        }
+
+        $codigoBase = implode('+', array_slice($codigos, 0, 3));
+        if (count($codigos) > 3) {
+            $codigoBase .= '+...';
+        }
+
+        $descricaoBase = implode(' | ', array_slice($descricoes, 0, 2));
+        if (count($descricoes) > 2) {
+            $descricaoBase .= ' | ...';
+        }
+
+        return [
+            'id' => null,
+            'codigo_pedido' => 'MULTI-' . date('Ymd-His') . '-' . random_int(100, 999),
+            'descricao' => 'Simulação consolidada: ' . $descricaoBase,
+            'status' => 'simulacao_multi',
+            'observacoes' => 'Pedidos de origem: ' . implode(', ', $codigos),
+            'pedidos_origem' => array_map(static function ($pedido) {
+                return [
+                    'id' => (int) $pedido['id'],
+                    'codigo_pedido' => $pedido['codigo_pedido'],
+                    'descricao' => $pedido['descricao'],
+                ];
+            }, $pedidos),
+            'codigo_pedido_resumo' => $codigoBase,
+            'itens' => $itens,
+        ];
+    }
+
+    private function materializeVirtualPedido(array $pedido): array {
+        $codigo = trim((string) ($pedido['codigo_pedido'] ?? ''));
+        if ($codigo === '') {
+            $codigo = 'MULTI-' . date('Ymd-His') . '-' . random_int(100, 999);
+        }
+
+        $descricao = trim((string) ($pedido['descricao'] ?? 'Simulação consolidada'));
+        $observacoes = trim((string) ($pedido['observacoes'] ?? ''));
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO pedidos_carga (codigo_pedido, descricao, status, observacoes) VALUES (?, ?, ?, ?)'
+        );
+        $stmt->execute([$codigo, $descricao, 'simulacao_multi', $observacoes]);
+        $pedido['id'] = (int) $this->pdo->lastInsertId();
+        $pedido['status'] = 'simulacao_multi';
+
+        return $pedido;
+    }
+
     private function persistSimulation(array $pedido, array $result, string $observacoes): int {
         $codigo = 'SIM-' . date('Ymd-His') . '-' . random_int(100, 999);
         $usuario = get_logged_user();
 
         $this->pdo->beginTransaction();
         try {
+            if (empty($pedido['id'])) {
+                $pedido = $this->materializeVirtualPedido($pedido);
+            }
+
             $stmt = $this->pdo->prepare(
                 'INSERT INTO simulacoes
                     (codigo_simulacao, pedido_id, usuario_id, score_total, status, total_veiculos, qtd_itens_total, qtd_itens_alocados, qtd_itens_nao_alocados, peso_total_kg, volume_total_m3, observacoes)
@@ -1088,6 +1333,7 @@ class Simulacao {
             'fragilidade' => $item['fragilidade'],
             'empilhavel' => $item['empilhavel'],
             'cor_hex' => $item['cor_hex'],
+            'orientacao_manual' => $this->isBobinaPlacement($item) ? 'deitado_axial' : 'base_0',
             'observacoes_restricao' => trim($obs . '. ' . ($item['observacoes_item'] ?? '')),
         ];
     }
@@ -1095,7 +1341,7 @@ class Simulacao {
     private function buildManualPlacementPayload(array $unit, array $placementInput): array {
         $length = isset($placementInput['comprimento_m']) ? round((float) $placementInput['comprimento_m'], 2) : (float) $unit['comprimento_m'];
         $width = isset($placementInput['largura_m']) ? round((float) $placementInput['largura_m'], 2) : (float) $unit['largura_m'];
-        $orientation = (string) ($placementInput['orientacao_manual'] ?? 'base_0');
+        $orientation = (string) ($placementInput['orientacao_manual'] ?? ($this->isBobinaPlacement($unit) ? 'deitado_axial' : 'base_0'));
 
         if ($this->isBobinaPlacement($unit)) {
             $length = (float) $unit['comprimento_m'];
@@ -1134,7 +1380,7 @@ class Simulacao {
                 trim((string) ($placementInput['grupo_label'] ?? '')) !== ''
                     ? 'Bloco manual: ' . trim((string) $placementInput['grupo_label'])
                     : 'Posicionado manualmente',
-                $this->isBobinaPlacement($unit) ? 'Bobina mantida em pe.' : 'Montagem manual.'
+                $this->isBobinaPlacement($unit) ? 'Bobina transportada deitada com eixo lateral.' : 'Montagem manual.'
             ),
         ];
     }
@@ -1155,8 +1401,8 @@ class Simulacao {
                 throw new Exception("{$placement['codigo_material']} ultrapassa a largura útil de {$vehicleState['slot_codigo']}.");
             }
 
-            if ($this->isBobinaPlacement($placement) && $this->wasManualSideLayRequested($placement)) {
-                throw new Exception("{$placement['codigo_material']} não pode ficar deitado de lado. Bobinas devem permanecer em pé.");
+            if ($this->isBobinaPlacement($placement) && $this->wasInvalidBobinaOrientationRequested($placement)) {
+                throw new Exception("{$placement['codigo_material']} deve ser transportado com a bobina deitada.");
             }
 
             if ((int) $placement['lastro_posicao'] === 2) {
@@ -1262,8 +1508,8 @@ class Simulacao {
                 throw new Exception("{$placement['codigo_material']} ultrapassa a largura útil do veículo.");
             }
 
-            if ($this->isBobinaPlacement($placement) && $this->wasManualSideLayRequested($placement)) {
-                throw new Exception("{$placement['codigo_material']} não pode ficar deitado de lado. Bobinas devem permanecer em pé.");
+            if ($this->isBobinaPlacement($placement) && $this->wasInvalidBobinaOrientationRequested($placement)) {
+                throw new Exception("{$placement['codigo_material']} deve ser transportado com a bobina deitada.");
             }
 
             if ((int) $placement['lastro_posicao'] === 2) {
@@ -1517,6 +1763,20 @@ class Simulacao {
             }
         }
 
+        if ($this->isBobinaPlacement($target) && ($target['perfil_empilhamento'] ?? '') === 'piramidal') {
+            $pairSupport = $this->findPyramidalPairSupport($placements, $target);
+            if (
+                $pairSupport !== null
+                && abs((float) $target['posicao_x'] - (float) $pairSupport['x']) <= 0.3
+                && abs((float) $target['posicao_y'] - (float) $pairSupport['y']) <= 0.3
+            ) {
+                return [
+                    'codigo_material' => 'Par de bobinas',
+                    'altura_m' => (float) $pairSupport['z'],
+                ];
+            }
+        }
+
         return null;
     }
 
@@ -1526,8 +1786,9 @@ class Simulacao {
         return str_contains($codigo, 'bob') || str_contains($descricao, 'bobina');
     }
 
-    private function wasManualSideLayRequested(array $placement): bool {
-        return isset($placement['orientacao_manual']) && $placement['orientacao_manual'] === 'deitado_lado';
+    private function wasInvalidBobinaOrientationRequested(array $placement): bool {
+        $orientation = (string) ($placement['orientacao_manual'] ?? 'deitado_axial');
+        return $orientation === 'em_pe';
     }
 
     private function appendManualTag(string $text, string $tag): string {
@@ -1609,21 +1870,57 @@ class Simulacao {
             for ($j = $i + 1; $j < count($matches); $j++) {
                 $a = $matches[$i];
                 $b = $matches[$j];
-                $sameDepth = abs($a['posicao_x'] - $b['posicao_x']) <= 0.25;
-                $adjacent = abs(($a['posicao_y'] + $a['largura_m']) - $b['posicao_y']) <= 0.3
+                $sameTrackY = abs($a['posicao_y'] - $b['posicao_y']) <= 0.2;
+                $adjacentX = abs(($a['posicao_x'] + $a['comprimento_m']) - $b['posicao_x']) <= 0.3
+                    || abs(($b['posicao_x'] + $b['comprimento_m']) - $a['posicao_x']) <= 0.3;
+                $sameDepthX = abs($a['posicao_x'] - $b['posicao_x']) <= 0.25;
+                $adjacentY = abs(($a['posicao_y'] + $a['largura_m']) - $b['posicao_y']) <= 0.3
                     || abs(($b['posicao_y'] + $b['largura_m']) - $a['posicao_y']) <= 0.3;
 
-                if ($sameDepth && $adjacent) {
+                if ($sameTrackY && $adjacentX) {
+                    $centerAX = (float) $a['posicao_x'] + ((float) $a['comprimento_m'] / 2);
+                    $centerBX = (float) $b['posicao_x'] + ((float) $b['comprimento_m'] / 2);
                     return [
-                        'x' => min($a['posicao_x'], $b['posicao_x']) + (min($a['comprimento_m'], $b['comprimento_m']) * 0.15),
-                        'y' => min($a['posicao_y'], $b['posicao_y']) + (abs($a['posicao_y'] - $b['posicao_y']) / 2),
-                        'z' => max($a['altura_m'], $b['altura_m']),
+                        'x' => round((($centerAX + $centerBX) / 2) - ((float) $item['comprimento_m'] / 2), 2),
+                        'y' => round(((float) $a['posicao_y'] + (float) $b['posicao_y']) / 2, 2),
+                        'z' => round(max((float) $a['altura_m'], (float) $b['altura_m']) * 0.73, 2),
+                    ];
+                }
+
+                if ($sameDepthX && $adjacentY) {
+                    return [
+                        'x' => round(min((float) $a['posicao_x'], (float) $b['posicao_x']) + (min((float) $a['comprimento_m'], (float) $b['comprimento_m']) * 0.15), 2),
+                        'y' => round(min((float) $a['posicao_y'], (float) $b['posicao_y']) + (abs((float) $a['posicao_y'] - (float) $b['posicao_y']) / 2), 2),
+                        'z' => round(max((float) $a['altura_m'], (float) $b['altura_m']) * 0.73, 2),
                     ];
                 }
             }
         }
 
         return null;
+    }
+
+    private function normalizeTransportDimensions(array $item): array {
+        $length = round((float) ($item['comprimento_m'] ?? 0), 2);
+        $width = round((float) ($item['largura_m'] ?? 0), 2);
+        $height = round((float) ($item['altura_m'] ?? 0), 2);
+
+        if (!$this->isBobinaPlacement($item)) {
+            return [
+                'comprimento_m' => $length,
+                'largura_m' => $width,
+                'altura_m' => $height,
+            ];
+        }
+
+        $diameter = round(max($length, $width), 2);
+        $spoolWidth = round(min($length, $width, $height), 2);
+
+        return [
+            'comprimento_m' => $diameter,
+            'largura_m' => $spoolWidth,
+            'altura_m' => $diameter,
+        ];
     }
 
     private function buildAxisSequence(float $max, bool $descending): array {

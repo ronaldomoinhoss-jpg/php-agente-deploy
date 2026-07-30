@@ -34,7 +34,20 @@ if ($db_driver === 'sqlite') {
             }
         }
 
-        $requiredTables = ['veiculos', 'bases_operacionais', 'materiais', 'regras_operacionais', 'pedidos_carga', 'simulacoes'];
+        $requiredTables = [
+            'veiculos',
+            'unidades_veiculo',
+            'bases_operacionais',
+            'rotas',
+            'rota_bases',
+            'materiais',
+            'regras_operacionais',
+            'pedidos_carga',
+            'simulacoes',
+            'planejamento_rotas',
+            'planejamento_pedidos',
+            'planejamento_cargas'
+        ];
         $existingTables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(PDO::FETCH_COLUMN);
         $missingTables = array_diff($requiredTables, $existingTables ?: []);
         if (!empty($missingTables)) {

@@ -15,6 +15,7 @@ class PedidoCarga {
                        COALESCE(SUM(i.quantidade), 0) AS unidades
                 FROM pedidos_carga p
                 LEFT JOIN pedido_itens i ON i.pedido_id = p.id
+                WHERE p.status NOT IN ("planejamento_rota", "simulacao_multi")
                 GROUP BY p.id
                 ORDER BY p.id DESC';
         return $this->pdo->query($sql)->fetchAll();
@@ -130,4 +131,3 @@ class PedidoCarga {
         return $stmt->execute([$id]);
     }
 }
-

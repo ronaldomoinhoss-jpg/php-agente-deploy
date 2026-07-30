@@ -32,6 +32,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <a href="veiculos.php" class="nav-link <?= $currentPage == 'veiculos.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-truck-front"></i> <span>Veículos</span>
         </a>
+        <a href="unidades_frota.php" class="nav-link <?= $currentPage == 'unidades_frota.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-id-badge"></i> <span>Unidades de Frota</span>
+        </a>
         <a href="materiais.php" class="nav-link <?= $currentPage == 'materiais.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-boxes-stacked"></i> <span>Materiais</span>
         </a>
@@ -45,6 +48,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <div class="menu-category">Pedidos & Simulação</div>
         <a href="pedidos.php" class="nav-link <?= $currentPage == 'pedidos.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-list-check"></i> <span>Pedidos de Carga</span>
+        </a>
+        <a href="rotas.php" class="nav-link <?= $currentPage == 'rotas.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-route"></i> <span>Rotas</span>
+        </a>
+        <a href="planejamento_rotas.php" class="nav-link <?= $currentPage == 'planejamento_rotas.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-diagram-project"></i> <span>Planejamento por Rota</span>
+        </a>
+        <a href="relatorio_semanal.php" class="nav-link <?= $currentPage == 'relatorio_semanal.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-calendar-week"></i> <span>Relatório Semanal</span>
         </a>
         <a href="importar_materiais.php" class="nav-link <?= $currentPage == 'importar_materiais.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-file-import"></i> <span>Importações</span>

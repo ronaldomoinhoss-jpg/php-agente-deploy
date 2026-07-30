@@ -20,8 +20,16 @@ class SimulacaoController {
         return $this->model->executar($pedidoId, $frotaSelecionada, $observacoes);
     }
 
+    public function executarPedidos(array $pedidoIds, array $frotaSelecionada, string $observacoes = ''): array {
+        return $this->model->executarPedidos($pedidoIds, $frotaSelecionada, $observacoes);
+    }
+
     public function executarManual(int $pedidoId, array $frotaSelecionada, array $placements, string $observacoes = ''): array {
         return $this->model->executarManual($pedidoId, $frotaSelecionada, $placements, $observacoes);
+    }
+
+    public function executarManualPedidos(array $pedidoIds, array $frotaSelecionada, array $placements, string $observacoes = ''): array {
+        return $this->model->executarManualPedidos($pedidoIds, $frotaSelecionada, $placements, $observacoes);
     }
 
     public function atualizarMontagemManual(int $simulacaoId, int $simulacaoVeiculoId, array $itens): array {

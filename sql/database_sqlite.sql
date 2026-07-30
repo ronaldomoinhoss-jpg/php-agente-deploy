@@ -34,6 +34,25 @@ INSERT OR IGNORE INTO veiculos (id, tipo, nome, capacidade_kg, capacidade_m3, co
 (3, 'Carreta', 'Carreta prancha 30T', 30000.00, 78.00, 13.50, 2.50, 2.30, 2, 'misto', 2, 'Melhor para postes, grandes bobinas e cargas consolidadas.'),
 (4, 'VUC', 'VUC 6T urbano', 6000.00, 18.50, 4.80, 2.20, 1.90, 2, 'traseira', 2, 'Suporte para bases menores e redistribuição urbana.');
 
+CREATE TABLE IF NOT EXISTS unidades_veiculo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  veiculo_id INTEGER NOT NULL,
+  codigo_unidade TEXT NOT NULL UNIQUE,
+  status_operacional TEXT DEFAULT 'disponivel',
+  ativo INTEGER DEFAULT 1,
+  observacoes TEXT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (veiculo_id) REFERENCES veiculos(id) ON DELETE RESTRICT
+);
+
+INSERT OR IGNORE INTO unidades_veiculo (id, veiculo_id, codigo_unidade, status_operacional, ativo, observacoes) VALUES
+(1, 3, 'CRT-001', 'disponivel', 1, 'Carreta operacional principal.'),
+(2, 3, 'CRT-002', 'disponivel', 1, 'Carreta operacional reserva.'),
+(3, 2, 'TRK-001', 'disponivel', 1, 'Truck de apoio regional.'),
+(4, 2, 'TRK-002', 'disponivel', 1, 'Truck para reforço de carga.'),
+(5, 1, 'MNK-001', 'disponivel', 1, 'Munck para cargas especiais.');
+
 CREATE TABLE IF NOT EXISTS bases_operacionais (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   codigo TEXT NOT NULL UNIQUE,
@@ -49,6 +68,36 @@ INSERT OR IGNORE INTO bases_operacionais (id, codigo, nome, endereco, ordem_padr
 (1, 'BASE-CENTRO', 'Base Centro', 'Região central de atendimento', 1, 'Base prioritária para entregas matinais.'),
 (2, 'BASE-NORTE', 'Base Norte', 'Corredor norte de distribuição', 2, 'Recebe reforço de transformadores e cabos.'),
 (3, 'BASE-SUL', 'Base Sul', 'Polo sul / equipes de campo', 3, 'Base com alto giro de ferragens e postes.');
+
+CREATE TABLE IF NOT EXISTS rotas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo TEXT NOT NULL UNIQUE,
+  descricao TEXT NOT NULL,
+  data_planejada DATE NULL,
+  origem_base_id INTEGER NULL,
+  status TEXT DEFAULT 'planejada',
+  observacoes TEXT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (origem_base_id) REFERENCES bases_operacionais(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS rota_bases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rota_id INTEGER NOT NULL,
+  base_id INTEGER NOT NULL,
+  sequencia INTEGER NOT NULL,
+  FOREIGN KEY (rota_id) REFERENCES rotas(id) ON DELETE CASCADE,
+  FOREIGN KEY (base_id) REFERENCES bases_operacionais(id) ON DELETE RESTRICT
+);
+
+INSERT OR IGNORE INTO rotas (id, codigo, descricao, data_planejada, origem_base_id, status, observacoes) VALUES
+(1, 'ROT-20260730-NORTE', 'Rota Norte de abastecimento multi-base', '2026-07-30', 1, 'planejada', 'Rota exemplo para consolidação de pedidos.');
+
+INSERT OR IGNORE INTO rota_bases (id, rota_id, base_id, sequencia) VALUES
+(1, 1, 1, 1),
+(2, 1, 2, 2),
+(3, 1, 3, 3);
 
 CREATE TABLE IF NOT EXISTS materiais (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -237,4 +286,51 @@ CREATE TABLE IF NOT EXISTS simulacao_regras_aplicadas (
   FOREIGN KEY (simulacao_id) REFERENCES simulacoes(id) ON DELETE CASCADE,
   FOREIGN KEY (simulacao_veiculo_id) REFERENCES simulacao_veiculos(id) ON DELETE CASCADE,
   FOREIGN KEY (regra_id) REFERENCES regras_operacionais(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS planejamento_rotas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo_planejamento TEXT NOT NULL UNIQUE,
+  rota_id INTEGER NOT NULL,
+  pedido_consolidado_id INTEGER NOT NULL,
+  simulacao_id INTEGER NOT NULL,
+  data_operacao DATE NOT NULL,
+  status TEXT DEFAULT 'planejado',
+  total_cargas INTEGER DEFAULT 0,
+  total_peso_kg REAL DEFAULT 0,
+  total_volume_m3 REAL DEFAULT 0,
+  score_total REAL DEFAULT 0,
+  observacoes TEXT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (rota_id) REFERENCES rotas(id) ON DELETE CASCADE,
+  FOREIGN KEY (pedido_consolidado_id) REFERENCES pedidos_carga(id) ON DELETE RESTRICT,
+  FOREIGN KEY (simulacao_id) REFERENCES simulacoes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS planejamento_pedidos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  planejamento_id INTEGER NOT NULL,
+  pedido_id INTEGER NOT NULL,
+  FOREIGN KEY (planejamento_id) REFERENCES planejamento_rotas(id) ON DELETE CASCADE,
+  FOREIGN KEY (pedido_id) REFERENCES pedidos_carga(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS planejamento_cargas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  planejamento_id INTEGER NOT NULL,
+  simulacao_veiculo_id INTEGER NOT NULL,
+  unidade_veiculo_id INTEGER NULL,
+  veiculo_id INTEGER NOT NULL,
+  codigo_carga TEXT NOT NULL,
+  bases_atendidas TEXT NULL,
+  peso_total_kg REAL DEFAULT 0,
+  volume_total_m3 REAL DEFAULT 0,
+  ocupacao_peso_pct REAL DEFAULT 0,
+  ocupacao_volume_pct REAL DEFAULT 0,
+  status TEXT DEFAULT 'planejada',
+  FOREIGN KEY (planejamento_id) REFERENCES planejamento_rotas(id) ON DELETE CASCADE,
+  FOREIGN KEY (simulacao_veiculo_id) REFERENCES simulacao_veiculos(id) ON DELETE CASCADE,
+  FOREIGN KEY (unidade_veiculo_id) REFERENCES unidades_veiculo(id) ON DELETE SET NULL,
+  FOREIGN KEY (veiculo_id) REFERENCES veiculos(id) ON DELETE RESTRICT
 );
